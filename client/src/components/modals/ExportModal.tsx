@@ -21,7 +21,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ open, onClose }) => {
   const [exportViewportOnly, setExportViewportOnly] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   
-  const { state } = useEditor();
+  const { state, loadedTilesetImages } = useEditor();
   const { toast } = useToast();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
@@ -55,18 +55,6 @@ const ExportModal: React.FC<ExportModalProps> = ({ open, onClose }) => {
         );
       }
       
-      // Get the loaded tilesets from the main app
-      const tilesetImages = new Map<number, HTMLImageElement>();
-      
-      // Find all tileset images that might be in the DOM
-      const tilesetElements = document.querySelectorAll('img[src*="tilesets"]');
-      Array.from(tilesetElements).forEach((element, index) => {
-        const img = element as HTMLImageElement;
-        // This is a simplification - in a real app, we would need to get the actual tileset IDs
-        // Here we're assuming the first tileset has ID 1, second has ID 2, etc.
-        tilesetImages.set(index + 1, img);
-      });
-      
       // Draw all layers or just the current one
       if (exportAllLayers) {
         const visibleLayers = state.layers.filter(layer => layer.visible);
@@ -78,7 +66,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ open, onClose }) => {
               if (tile) {
                 // Parse the tile data
                 const [tilesetId, tileX, tileY] = tile.split(',').map(Number);
-                const tilesetImg = tilesetImages.get(tilesetId);
+                const tilesetImg = loadedTilesetImages.get(tilesetId);
                 
                 if (tilesetImg) {
                   // Calculate positions and draw
@@ -107,7 +95,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ open, onClose }) => {
               if (tile) {
                 // Parse the tile data
                 const [tilesetId, tileX, tileY] = tile.split(',').map(Number);
-                const tilesetImg = tilesetImages.get(tilesetId);
+                const tilesetImg = loadedTilesetImages.get(tilesetId);
                 
                 if (tilesetImg) {
                   // Calculate positions and draw

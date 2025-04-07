@@ -25,6 +25,7 @@ export const tilesets = pgTable("tilesets", {
   tileHeight: integer("tile_height").notNull(),
   gridWidth: integer("grid_width").notNull(),
   gridHeight: integer("grid_height").notNull(),
+  isPublic: boolean("is_public").default(false).notNull(),
 });
 
 export const insertTilesetSchema = createInsertSchema(tilesets).pick({
@@ -35,10 +36,26 @@ export const insertTilesetSchema = createInsertSchema(tilesets).pick({
   tileHeight: true,
   gridWidth: true,
   gridHeight: true,
+  isPublic: true,
 });
 
 export type InsertTileset = z.infer<typeof insertTilesetSchema>;
 export type Tileset = typeof tilesets.$inferSelect;
+
+// User-to-tileset collection association
+export const tilesetCollections = pgTable("tileset_collections", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => users.id),
+  tilesetId: integer("tileset_id").notNull().references(() => tilesets.id),
+});
+
+export const insertTilesetCollectionSchema = createInsertSchema(tilesetCollections).pick({
+  userId: true,
+  tilesetId: true,
+});
+
+export type InsertTilesetCollection = z.infer<typeof insertTilesetCollectionSchema>;
+export type TilesetCollection = typeof tilesetCollections.$inferSelect;
 
 export const maps = pgTable("maps", {
   id: serial("id").primaryKey(),

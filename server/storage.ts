@@ -1,9 +1,10 @@
 import { 
   type User, type InsertUser,
   type Tileset, type InsertTileset,
-  type Map, type InsertMap
+  type Map, type InsertMap,
+  type TilesetCollection, type InsertTilesetCollection
 } from "@shared/schema";
-import { getUsersCollection, getTilesetsCollection, getMapsCollection } from './db';
+import { connectToDatabase, getUsersCollection, getTilesetsCollection, getMapsCollection } from './db';
 import { ObjectId } from 'mongodb';
 import session from 'express-session';
 import connectMongo from 'connect-mongo';
@@ -22,10 +23,18 @@ export interface IStorage {
   
   // Tileset methods
   getTilesets(): Promise<Tileset[]>;
+  getPublicTilesets(): Promise<Tileset[]>;
   getTilesetsByUserId(userId: number): Promise<Tileset[]>;
+  getUserTilesetCollection(userId: number): Promise<Tileset[]>;
   getTileset(id: number): Promise<Tileset | undefined>;
   createTileset(tileset: InsertTileset): Promise<Tileset>;
+  updateTileset(id: number, update: Partial<InsertTileset>): Promise<Tileset | undefined>;
   deleteTileset(id: number): Promise<boolean>;
+  
+  // Tileset Collection methods
+  addTilesetToCollection(userId: number, tilesetId: number): Promise<boolean>;
+  removeTilesetFromCollection(userId: number, tilesetId: number): Promise<boolean>;
+  isInCollection(userId: number, tilesetId: number): Promise<boolean>;
   
   // Map methods
   getMaps(): Promise<Map[]>;
@@ -44,7 +53,12 @@ export class MongoDBStorage implements IStorage {
   
   constructor() {
     // Setup MongoDB session store
-    const mongoUrl = process.env.MONGODB_URI || "mongodb+srv://FantasyMapApp:xtBuJkRDn1UAsbkM@cluster0.lzyuyuq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+    const mongoUrl = process.env.MONGODB_URI;
+    if (!mongoUrl) {
+      console.warn("MONGODB_URI environment variable not set. Please set it for production use.");
+      throw new Error("MONGODB_URI environment variable not set");
+    }
+    
     this.sessionStore = MongoStore.create({
       mongoUrl,
       collectionName: 'sessions',
@@ -71,7 +85,8 @@ export class MongoDBStorage implements IStorage {
             tileHeight: 16,
             gridWidth: 16,
             gridHeight: 16,
-            id: 1
+            id: 1,
+            isPublic: true
           },
           {
             name: "Overland Tiles 2",
@@ -81,7 +96,8 @@ export class MongoDBStorage implements IStorage {
             tileHeight: 16,
             gridWidth: 16,
             gridHeight: 16,
-            id: 2
+            id: 2,
+            isPublic: true
           }
         ]);
         console.log("Default tilesets initialized");
@@ -135,6 +151,38 @@ export class MongoDBStorage implements IStorage {
     return tileset || undefined;
   }
   
+  async getPublicTilesets(): Promise<Tileset[]> {
+    const tilesetsCollection = await getTilesetsCollection();
+    return tilesetsCollection
+      .find({ isPublic: true })
+      .toArray();
+  }
+  
+  async getUserTilesetCollection(userId: number): Promise<Tileset[]> {
+    // This function returns all tilesets that the user has added to their collection
+    const db = (await connectToDatabase()).db;
+    
+    // Create collection if doesn't exist
+    const collections = await db.listCollections({ name: "tileset_collections" }).toArray();
+    if (collections.length === 0) {
+      await db.createCollection("tileset_collections");
+    }
+    
+    const tilesetCollections = db.collection("tileset_collections");
+    const userCollections = await tilesetCollections.find({ userId }).toArray();
+    
+    if (userCollections.length === 0) {
+      return [];
+    }
+    
+    const tilesetIds = userCollections.map((collection: any) => collection.tilesetId);
+    
+    const tilesetsCollection = await getTilesetsCollection();
+    return tilesetsCollection
+      .find({ id: { $in: tilesetIds } })
+      .toArray();
+  }
+  
   async createTileset(insertTileset: InsertTileset): Promise<Tileset> {
     const tilesetsCollection = await getTilesetsCollection();
     
@@ -143,19 +191,76 @@ export class MongoDBStorage implements IStorage {
     const nextId = highestTileset.length > 0 ? highestTileset[0].id + 1 : 1;
     
     // Ensure userId is either a number or null (not undefined)
+    // Ensure isPublic is a boolean, default to false
     const tilesetWithId: Tileset = {
       ...insertTileset,
       userId: insertTileset.userId ?? null,
+      isPublic: insertTileset.isPublic ?? false,
       id: nextId
     };
     await tilesetsCollection.insertOne(tilesetWithId);
     return tilesetWithId;
   }
   
+  async updateTileset(id: number, update: Partial<InsertTileset>): Promise<Tileset | undefined> {
+    const tilesetsCollection = await getTilesetsCollection();
+    
+    const existingTileset = await tilesetsCollection.findOne({ id });
+    if (!existingTileset) return undefined;
+    
+    await tilesetsCollection.updateOne({ id }, { $set: update });
+    const updatedTileset = await tilesetsCollection.findOne({ id });
+    
+    return updatedTileset || undefined;
+  }
+  
   async deleteTileset(id: number): Promise<boolean> {
     const tilesetsCollection = await getTilesetsCollection();
     const result = await tilesetsCollection.deleteOne({ id });
     return result.deletedCount === 1;
+  }
+  
+  // Tileset Collection methods
+  async addTilesetToCollection(userId: number, tilesetId: number): Promise<boolean> {
+    const db = (await connectToDatabase()).db;
+    
+    // Create collection if doesn't exist
+    const collections = await db.listCollections({ name: "tileset_collections" }).toArray();
+    if (collections.length === 0) {
+      await db.createCollection("tileset_collections");
+    }
+    
+    const tilesetCollections = db.collection("tileset_collections");
+    
+    // Check if already in collection
+    const exists = await tilesetCollections.findOne({ userId, tilesetId });
+    if (exists) return true; // Already in collection
+    
+    // Add to collection
+    await tilesetCollections.insertOne({ userId, tilesetId });
+    return true;
+  }
+  
+  async removeTilesetFromCollection(userId: number, tilesetId: number): Promise<boolean> {
+    const db = (await connectToDatabase()).db;
+    const tilesetCollections = db.collection("tileset_collections");
+    
+    const result = await tilesetCollections.deleteOne({ userId, tilesetId });
+    return result.deletedCount === 1;
+  }
+  
+  async isInCollection(userId: number, tilesetId: number): Promise<boolean> {
+    const db = (await connectToDatabase()).db;
+    
+    // Handle if collection doesn't exist yet
+    const collections = await db.listCollections({ name: "tileset_collections" }).toArray();
+    if (collections.length === 0) {
+      return false;
+    }
+    
+    const tilesetCollections = db.collection("tileset_collections");
+    const exists = await tilesetCollections.findOne({ userId, tilesetId });
+    return !!exists;
   }
   
   // Map methods

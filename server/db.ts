@@ -1,7 +1,13 @@
 import { MongoClient, Collection, Db } from 'mongodb';
 import { User, Tileset, Map } from '@shared/schema';
 
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb+srv://FantasyMapApp:xtBuJkRDn1UAsbkM@cluster0.lzyuyuq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+// The environment variable must be defined or the app will exit
+// Using ! to tell TypeScript this won't be undefined after the check
+const MONGODB_URI = process.env.MONGODB_URI!;
+if (!MONGODB_URI) {
+  console.warn("MONGODB_URI environment variable not set. Please set it for production use.");
+  throw new Error("MONGODB_URI environment variable not set");
+}
 const DB_NAME = 'FantasyMapApp';
 
 // MongoDB connection

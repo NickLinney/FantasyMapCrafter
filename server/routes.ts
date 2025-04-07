@@ -49,10 +49,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get all tilesets
   app.get("/api/tilesets", async (req: Request, res: Response) => {
     try {
-      const tilesets = await storage.getTilesets();
-      res.json(tilesets);
+      // If user is authenticated, return tilesets owned by the user
+      // plus public tilesets not owned by the user
+      if (req.isAuthenticated()) {
+        const userId = req.user!.id;
+        const tilesets = await storage.getTilesetsByUserId(userId);
+        res.json(tilesets);
+      } else {
+        // If not authenticated, return only public tilesets
+        const tilesets = await storage.getPublicTilesets();
+        res.json(tilesets);
+      }
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch tilesets" });
+    }
+  });
+  
+  // Get public tilesets
+  app.get("/api/tilesets/public", async (req: Request, res: Response) => {
+    try {
+      const tilesets = await storage.getPublicTilesets();
+      res.json(tilesets);
+    } catch (error) {
+      console.error("Error fetching public tilesets:", error);
+      res.status(500).json({ message: "Failed to fetch public tilesets" });
+    }
+  });
+  
+  // Get user's tileset collection
+  app.get("/api/tilesets/collection", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.id;
+      const tilesets = await storage.getUserTilesetCollection(userId);
+      res.json(tilesets);
+    } catch (error) {
+      console.error("Error fetching user's tileset collection:", error);
+      res.status(500).json({ message: "Failed to fetch tileset collection" });
     }
   });
 
@@ -86,7 +118,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         tileHeight: parseInt(req.body.tileHeight),
         gridWidth: parseInt(req.body.gridWidth),
         gridHeight: parseInt(req.body.gridHeight),
-        userId: req.user?.id // Set userId from authenticated user
+        userId: req.user?.id, // Set userId from authenticated user
+        isPublic: req.body.isPublic === "true"
       };
       
       const parsedData = insertTilesetSchema.safeParse(tilesetData);
@@ -99,6 +132,75 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error uploading tileset:", error);
       res.status(500).json({ message: "Failed to upload tileset" });
+    }
+  });
+  
+  // Update a tileset
+  app.put("/api/tilesets/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      
+      // Check if tileset belongs to the current user
+      const existingTileset = await storage.getTileset(id);
+      if (!existingTileset) {
+        return res.status(404).json({ message: "Tileset not found" });
+      }
+      
+      // Only allow users to update their own tilesets
+      if (existingTileset.userId !== req.user?.id) {
+        return res.status(403).json({ message: "Forbidden: You can only update your own tilesets" });
+      }
+      
+      const updateData = {
+        ...req.body,
+        isPublic: req.body.isPublic === "true" ? true : (req.body.isPublic === "false" ? false : undefined)
+      };
+      
+      const updatedTileset = await storage.updateTileset(id, updateData);
+      res.json(updatedTileset);
+    } catch (error) {
+      console.error("Error updating tileset:", error);
+      res.status(500).json({ message: "Failed to update tileset" });
+    }
+  });
+  
+  // Add a tileset to user's collection
+  app.post("/api/tilesets/collection/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tilesetId = parseInt(req.params.id);
+      const userId = req.user!.id;
+      
+      // Check if tileset exists
+      const tileset = await storage.getTileset(tilesetId);
+      if (!tileset) {
+        return res.status(404).json({ message: "Tileset not found" });
+      }
+      
+      // Check if it's already in the user's collection
+      const isInCollection = await storage.isInCollection(userId, tilesetId);
+      if (isInCollection) {
+        return res.status(200).json({ message: "Tileset already in collection" });
+      }
+      
+      await storage.addTilesetToCollection(userId, tilesetId);
+      res.status(201).json({ message: "Tileset added to collection" });
+    } catch (error) {
+      console.error("Error adding tileset to collection:", error);
+      res.status(500).json({ message: "Failed to add tileset to collection" });
+    }
+  });
+  
+  // Remove a tileset from user's collection
+  app.delete("/api/tilesets/collection/:id", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const tilesetId = parseInt(req.params.id);
+      const userId = req.user!.id;
+      
+      await storage.removeTilesetFromCollection(userId, tilesetId);
+      res.status(200).json({ message: "Tileset removed from collection" });
+    } catch (error) {
+      console.error("Error removing tileset from collection:", error);
+      res.status(500).json({ message: "Failed to remove tileset from collection" });
     }
   });
 

@@ -51,7 +51,8 @@ export default function Navbar() {
     .toUpperCase();
 
   const navLinks = [
-    { href: "/", label: "Dashboard", icon: <Home className="mr-2 h-4 w-4" /> },
+    { href: "/", label: "Editor", icon: <Layers className="mr-2 h-4 w-4" /> },
+    { href: "/dashboard", label: "Dashboard", icon: <Home className="mr-2 h-4 w-4" /> },
     { href: "/add-tileset", label: "Add Tileset", icon: <Plus className="mr-2 h-4 w-4" /> },
   ];
 

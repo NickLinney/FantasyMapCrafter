@@ -1,8 +1,15 @@
 import { 
-  users, type User, type InsertUser,
-  tilesets, type Tileset, type InsertTileset,
-  maps, type Map, type InsertMap
+  type User, type InsertUser,
+  type Tileset, type InsertTileset,
+  type Map, type InsertMap
 } from "@shared/schema";
+import { getUsersCollection, getTilesetsCollection, getMapsCollection } from './db';
+import { ObjectId } from 'mongodb';
+import session from 'express-session';
+import connectMongo from 'connect-mongo';
+
+// Create MongoDB session store
+const MongoStore = connectMongo;
 
 // modify the interface with any CRUD methods
 // you might need
@@ -27,124 +34,182 @@ export interface IStorage {
   createMap(map: InsertMap): Promise<Map>;
   updateMap(id: number, map: Partial<InsertMap>): Promise<Map | undefined>;
   deleteMap(id: number): Promise<boolean>;
+  
+  // Session store
+  sessionStore: session.Store;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private tilesets: Map<number, Tileset>;
-  private maps: Map<number, Map>;
-  private userCurrentId: number;
-  private tilesetCurrentId: number;
-  private mapCurrentId: number;
-
+export class MongoDBStorage implements IStorage {
+  sessionStore: session.Store;
+  
   constructor() {
-    this.users = new Map();
-    this.tilesets = new Map();
-    this.maps = new Map();
-    this.userCurrentId = 1;
-    this.tilesetCurrentId = 1;
-    this.mapCurrentId = 1;
-    
-    // Initialize with default tilesets
-    this.createTileset({
-      name: "Overland Tiles 1",
-      userId: null,
-      imageUrl: "/api/tilesets/overland1.png",
-      tileWidth: 16,
-      tileHeight: 16,
-      gridWidth: 16,
-      gridHeight: 16
+    // Setup MongoDB session store
+    const mongoUrl = process.env.MONGODB_URI || "mongodb+srv://FantasyMapApp:xtBuJkRDn1UAsbkM@cluster0.lzyuyuq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0";
+    this.sessionStore = MongoStore.create({
+      mongoUrl,
+      collectionName: 'sessions',
+      ttl: 14 * 24 * 60 * 60, // 14 days
     });
     
-    this.createTileset({
-      name: "Overland Tiles 2",
-      userId: null,
-      imageUrl: "/api/tilesets/overland2.png",
-      tileWidth: 16,
-      tileHeight: 16,
-      gridWidth: 16,
-      gridHeight: 16
-    });
+    // Initialize default tilesets if they don't exist
+    this.initializeTilesets();
+  }
+  
+  private async initializeTilesets() {
+    try {
+      const tilesetsCollection = await getTilesetsCollection();
+      const count = await tilesetsCollection.countDocuments();
+      
+      if (count === 0) {
+        // Add default tilesets
+        await tilesetsCollection.insertMany([
+          {
+            name: "Overland Tiles 1",
+            userId: null,
+            imageUrl: "/api/tilesets/overland1.png",
+            tileWidth: 16,
+            tileHeight: 16,
+            gridWidth: 16,
+            gridHeight: 16,
+            id: 1
+          },
+          {
+            name: "Overland Tiles 2",
+            userId: null,
+            imageUrl: "/api/tilesets/overland2.png",
+            tileWidth: 16,
+            tileHeight: 16,
+            gridWidth: 16,
+            gridHeight: 16,
+            id: 2
+          }
+        ]);
+        console.log("Default tilesets initialized");
+      }
+    } catch (error) {
+      console.error("Failed to initialize tilesets:", error);
+    }
   }
 
   // User methods
   async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
+    const usersCollection = await getUsersCollection();
+    const user = await usersCollection.findOne({ id });
+    return user || undefined;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+    const usersCollection = await getUsersCollection();
+    const user = await usersCollection.findOne({ username });
+    return user || undefined;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.userCurrentId++;
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
+    const usersCollection = await getUsersCollection();
+    
+    // Find the highest id to generate the next id
+    const highestUser = await usersCollection.find().sort({ id: -1 }).limit(1).toArray();
+    const nextId = highestUser.length > 0 ? highestUser[0].id + 1 : 1;
+    
+    const user: User = { ...insertUser, id: nextId };
+    await usersCollection.insertOne(user);
     return user;
   }
   
   // Tileset methods
   async getTilesets(): Promise<Tileset[]> {
-    return Array.from(this.tilesets.values());
+    const tilesetsCollection = await getTilesetsCollection();
+    return tilesetsCollection.find().toArray();
   }
   
   async getTilesetsByUserId(userId: number): Promise<Tileset[]> {
-    return Array.from(this.tilesets.values())
-      .filter(tileset => tileset.userId === userId || tileset.userId === null);
+    const tilesetsCollection = await getTilesetsCollection();
+    return tilesetsCollection
+      .find({ $or: [{ userId }, { userId: null }] })
+      .toArray();
   }
   
   async getTileset(id: number): Promise<Tileset | undefined> {
-    return this.tilesets.get(id);
+    const tilesetsCollection = await getTilesetsCollection();
+    const tileset = await tilesetsCollection.findOne({ id });
+    return tileset || undefined;
   }
   
   async createTileset(insertTileset: InsertTileset): Promise<Tileset> {
-    const id = this.tilesetCurrentId++;
-    const tileset: Tileset = { ...insertTileset, id };
-    this.tilesets.set(id, tileset);
-    return tileset;
+    const tilesetsCollection = await getTilesetsCollection();
+    
+    // Find the highest id to generate the next id
+    const highestTileset = await tilesetsCollection.find().sort({ id: -1 }).limit(1).toArray();
+    const nextId = highestTileset.length > 0 ? highestTileset[0].id + 1 : 1;
+    
+    // Ensure userId is either a number or null (not undefined)
+    const tilesetWithId: Tileset = {
+      ...insertTileset,
+      userId: insertTileset.userId ?? null,
+      id: nextId
+    };
+    await tilesetsCollection.insertOne(tilesetWithId);
+    return tilesetWithId;
   }
   
   async deleteTileset(id: number): Promise<boolean> {
-    return this.tilesets.delete(id);
+    const tilesetsCollection = await getTilesetsCollection();
+    const result = await tilesetsCollection.deleteOne({ id });
+    return result.deletedCount === 1;
   }
   
   // Map methods
   async getMaps(): Promise<Map[]> {
-    return Array.from(this.maps.values());
+    const mapsCollection = await getMapsCollection();
+    return mapsCollection.find().toArray();
   }
   
   async getMapsByUserId(userId: number): Promise<Map[]> {
-    return Array.from(this.maps.values())
-      .filter(map => map.userId === userId);
+    const mapsCollection = await getMapsCollection();
+    return mapsCollection.find({ userId }).toArray();
   }
   
   async getMap(id: number): Promise<Map | undefined> {
-    return this.maps.get(id);
+    const mapsCollection = await getMapsCollection();
+    const map = await mapsCollection.findOne({ id });
+    return map || undefined;
   }
   
   async createMap(insertMap: InsertMap): Promise<Map> {
-    const id = this.mapCurrentId++;
-    const map: Map = { ...insertMap, id };
-    this.maps.set(id, map);
-    return map;
+    const mapsCollection = await getMapsCollection();
+    
+    // Find the highest id to generate the next id
+    const highestMap = await mapsCollection.find().sort({ id: -1 }).limit(1).toArray();
+    const nextId = highestMap.length > 0 ? highestMap[0].id + 1 : 1;
+    
+    // Ensure userId and description are not undefined
+    const mapWithId: Map = {
+      ...insertMap,
+      userId: insertMap.userId ?? null,
+      description: insertMap.description ?? null,
+      id: nextId
+    };
+    await mapsCollection.insertOne(mapWithId);
+    return mapWithId;
   }
   
   async updateMap(id: number, mapUpdate: Partial<InsertMap>): Promise<Map | undefined> {
-    const map = this.maps.get(id);
-    if (!map) {
-      return undefined;
-    }
+    const mapsCollection = await getMapsCollection();
     
-    const updatedMap = { ...map, ...mapUpdate };
-    this.maps.set(id, updatedMap);
-    return updatedMap;
+    const existingMap = await mapsCollection.findOne({ id });
+    if (!existingMap) return undefined;
+    
+    await mapsCollection.updateOne({ id }, { $set: mapUpdate });
+    const updatedMap = await mapsCollection.findOne({ id });
+    
+    return updatedMap || undefined;
   }
   
   async deleteMap(id: number): Promise<boolean> {
-    return this.maps.delete(id);
+    const mapsCollection = await getMapsCollection();
+    const result = await mapsCollection.deleteOne({ id });
+    return result.deletedCount === 1;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new MongoDBStorage();

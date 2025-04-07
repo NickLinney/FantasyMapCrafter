@@ -6,7 +6,6 @@ import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
 import { User as SelectUser } from "@shared/schema";
-import MemoryStore from "memorystore";
 
 declare global {
   namespace Express {
@@ -14,7 +13,6 @@ declare global {
   }
 }
 
-const MemoryStoreFactory = MemoryStore(session);
 const scryptAsync = promisify(scrypt);
 
 async function hashPassword(password: string) {
@@ -31,19 +29,22 @@ async function comparePasswords(supplied: string, stored: string) {
 }
 
 export function setupAuth(app: Express) {
-  const sessionStore = new MemoryStoreFactory({
-    checkPeriod: 86400000 // prune expired entries every 24h
-  });
-
   const sessionSettings: session.SessionOptions = {
-    secret: "fantasy-tile-maker-secret",
+    secret: process.env.SESSION_SECRET || "fantasy-tile-maker-secret",
     resave: false,
     saveUninitialized: false,
-    store: sessionStore,
+    store: storage.sessionStore,
     cookie: {
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      maxAge: 14 * 24 * 60 * 60 * 1000, // 14 days
+      secure: process.env.NODE_ENV === "production",
+      httpOnly: true
     }
   };
+
+  // For Vercel production environment
+  if (process.env.NODE_ENV === "production") {
+    app.set("trust proxy", 1);
+  }
 
   app.use(session(sessionSettings));
   app.use(passport.initialize());
@@ -81,6 +82,15 @@ export function setupAuth(app: Express) {
     try {
       const { username, password } = req.body;
       
+      // Basic validation
+      if (!username || !password) {
+        return res.status(400).json({ error: "Username and password are required" });
+      }
+      
+      if (password.length < 8) {
+        return res.status(400).json({ error: "Password must be at least 8 characters long" });
+      }
+      
       // Check if user already exists
       const existingUser = await storage.getUserByUsername(username);
       if (existingUser) {
@@ -108,16 +118,16 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
-    passport.authenticate("local", (err, user, info) => {
+    passport.authenticate("local", (err: Error | null, user: Express.User | false | null, info: { message: string } | undefined) => {
       if (err) {
         return next(err);
       }
       if (!user) {
         return res.status(401).json({ error: "Invalid username or password" });
       }
-      req.login(user, (err) => {
-        if (err) {
-          return next(err);
+      req.login(user, (loginErr) => {
+        if (loginErr) {
+          return next(loginErr);
         }
         return res.json(user);
       });

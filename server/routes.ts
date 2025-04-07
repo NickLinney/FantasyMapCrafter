@@ -1,4 +1,4 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { insertMapSchema, insertTilesetSchema } from "@shared/schema";
@@ -6,6 +6,14 @@ import fs from "fs";
 import path from "path";
 import multer from "multer";
 import { setupAuth } from "./auth";
+
+// Authentication middleware
+function isAuthenticated(req: Request, res: Response, next: NextFunction) {
+  if (req.isAuthenticated()) {
+    return next();
+  }
+  res.status(401).json({ error: "Unauthorized: You must be logged in" });
+}
 
 // Configure storage for file uploads
 const upload = multer({
@@ -64,8 +72,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Upload a new tileset
-  app.post("/api/tilesets", upload.single("image"), async (req: Request, res: Response) => {
+  // Upload a new tileset - protected route
+  app.post("/api/tilesets", isAuthenticated, upload.single("image"), async (req: Request, res: Response) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
@@ -78,7 +86,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         tileHeight: parseInt(req.body.tileHeight),
         gridWidth: parseInt(req.body.gridWidth),
         gridHeight: parseInt(req.body.gridHeight),
-        userId: req.body.userId ? parseInt(req.body.userId) : null
+        userId: req.user?.id // Set userId from authenticated user
       };
       
       const parsedData = insertTilesetSchema.safeParse(tilesetData);
@@ -89,6 +97,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const tileset = await storage.createTileset(parsedData.data);
       res.status(201).json(tileset);
     } catch (error) {
+      console.error("Error uploading tileset:", error);
       res.status(500).json({ message: "Failed to upload tileset" });
     }
   });
@@ -133,12 +142,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Create a new map
-  app.post("/api/maps", async (req: Request, res: Response) => {
+  // Create a new map - protected route
+  app.post("/api/maps", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const mapData = {
         ...req.body,
-        userId: req.body.userId ? parseInt(req.body.userId) : null,
+        userId: req.user?.id, // Set userId from authenticated user
         width: parseInt(req.body.width),
         height: parseInt(req.body.height),
         tileSize: parseInt(req.body.tileSize),
@@ -154,17 +163,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const map = await storage.createMap(parsedData.data);
       res.status(201).json(map);
     } catch (error) {
+      console.error("Error creating map:", error);
       res.status(500).json({ message: "Failed to create map" });
     }
   });
 
-  // Update an existing map
-  app.put("/api/maps/:id", async (req: Request, res: Response) => {
+  // Update an existing map - protected route
+  app.put("/api/maps/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
+      
+      // Check if map belongs to the current user
+      const existingMap = await storage.getMap(id);
+      if (!existingMap) {
+        return res.status(404).json({ message: "Map not found" });
+      }
+      
+      // Only allow users to update their own maps
+      if (existingMap.userId !== req.user?.id) {
+        return res.status(403).json({ message: "Forbidden: You can only update your own maps" });
+      }
+      
       const mapData = {
         ...req.body,
-        userId: req.body.userId ? parseInt(req.body.userId) : undefined,
+        // Don't allow changing the userId
         width: req.body.width ? parseInt(req.body.width) : undefined,
         height: req.body.height ? parseInt(req.body.height) : undefined,
         tileSize: req.body.tileSize ? parseInt(req.body.tileSize) : undefined,
@@ -172,29 +194,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
       
       const updatedMap = await storage.updateMap(id, mapData);
-      
-      if (!updatedMap) {
-        return res.status(404).json({ message: "Map not found" });
-      }
-      
       res.json(updatedMap);
     } catch (error) {
+      console.error("Error updating map:", error);
       res.status(500).json({ message: "Failed to update map" });
     }
   });
 
-  // Delete a map
-  app.delete("/api/maps/:id", async (req: Request, res: Response) => {
+  // Delete a map - protected route
+  app.delete("/api/maps/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
-      const success = await storage.deleteMap(id);
       
-      if (!success) {
+      // Check if map belongs to the current user
+      const existingMap = await storage.getMap(id);
+      if (!existingMap) {
         return res.status(404).json({ message: "Map not found" });
       }
       
+      // Only allow users to delete their own maps
+      if (existingMap.userId !== req.user?.id) {
+        return res.status(403).json({ message: "Forbidden: You can only delete your own maps" });
+      }
+      
+      const success = await storage.deleteMap(id);
       res.status(204).send();
     } catch (error) {
+      console.error("Error deleting map:", error);
       res.status(500).json({ message: "Failed to delete map" });
     }
   });

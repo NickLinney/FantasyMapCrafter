@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { useEditor } from "@/contexts/EditorContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -18,9 +17,10 @@ import { Separator } from "@/components/ui/separator";
 export default function DashboardPage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
-  const { loadMap } = useEditor();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
+  
+  // We'll handle the loadMap function separately since we're outside the EditorProvider
   
   // Fetch maps
   const {
@@ -69,11 +69,13 @@ export default function DashboardPage() {
   
   const handleLoadMap = async (mapId: number) => {
     try {
-      await loadMap(mapId);
+      // Instead of using the loadMap method from the EditorContext,
+      // we'll set a mapId in localStorage and then navigate to the home page
+      localStorage.setItem('mapToLoad', mapId.toString());
       setLocation("/");
       toast({
-        title: "Map Loaded",
-        description: "Map loaded successfully",
+        title: "Opening Map",
+        description: "Redirecting to editor with the selected map",
       });
     } catch (error) {
       toast({

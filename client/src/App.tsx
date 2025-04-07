@@ -9,6 +9,7 @@ import AuthPage from "@/pages/auth-page";
 import DashboardPage from "@/pages/dashboard-page";
 import { ProtectedRoute } from "@/lib/protected-route";
 import { AuthProvider } from "@/hooks/use-auth";
+import { EditorProvider } from "@/contexts/EditorContext";
 
 function Router() {
   return (

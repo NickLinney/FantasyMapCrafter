@@ -93,7 +93,12 @@ const TilesetPanel: React.FC = () => {
               ))}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="icon" className="h-8 w-8">
+          <Button 
+            variant="outline" 
+            size="icon" 
+            className="h-8 w-8"
+            onClick={() => window.open('/add-tileset', '_self')}
+          >
             <PlusIcon className="h-4 w-4" />
           </Button>
         </div>
@@ -212,8 +217,8 @@ const TilesetPanel: React.FC = () => {
               key={layer.id}
               className={`flex items-center justify-between ${
                 index === state.currentLayer 
-                  ? 'bg-primary-light' 
-                  : 'bg-white hover:bg-neutral-50'
+                  ? 'bg-primary text-white' 
+                  : 'bg-white hover:bg-neutral-100'
               } p-1.5 rounded cursor-pointer`}
               onClick={() => handleLayerClick(index)}
             >

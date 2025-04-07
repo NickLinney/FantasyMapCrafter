@@ -3,7 +3,7 @@ import { useEditor } from '@/contexts/EditorContext';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { PlusIcon, ZoomIn, ZoomOut } from 'lucide-react';
-import { drawGrid, canvasToMapPosition, drawAllLayers } from '@/lib/canvasUtils';
+import { drawGrid, canvasToMapPosition, drawAllLayers, mapToCanvasPosition } from '@/lib/canvasUtils';
 
 interface CanvasProps {
   onNewMapClick: () => void;
@@ -15,7 +15,10 @@ const Canvas: React.FC<CanvasProps> = ({ onNewMapClick }) => {
     loadedTilesetImages, 
     setCursorPosition, 
     applyToolAtPosition,
-    setZoomLevel 
+    setZoomLevel,
+    setMapType,
+    setTileSize,
+    setMapSize
   } = useEditor();
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -101,6 +104,73 @@ const Canvas: React.FC<CanvasProps> = ({ onNewMapClick }) => {
     
     if (isDragging) {
       applyToolAtPosition(mapX, mapY);
+    } else {
+      // Draw brush outline preview
+      const context = canvas.getContext('2d');
+      if (context && state.selectedTool !== 'fill') {
+        // Redraw the canvas to clear previous outline
+        drawGrid(
+          context,
+          state.mapSize.width,
+          state.mapSize.height,
+          state.tileSize,
+          state.mapType
+        );
+        
+        drawAllLayers(
+          context,
+          loadedTilesetImages,
+          state.layers,
+          state.tileSize,
+          state.mapType
+        );
+        
+        // Draw brush outline based on the selected tool
+        context.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+        context.lineWidth = 2;
+        
+        if (state.mapType === 'grid') {
+          if (state.selectedTool === 'smallBrush' || state.selectedTool === 'eraser') {
+            // Single tile outline
+            const tileX = mapX * state.tileSize;
+            const tileY = mapY * state.tileSize;
+            context.strokeRect(tileX, tileY, state.tileSize, state.tileSize);
+          } else if (state.selectedTool === 'largeBrush') {
+            // 3x3 area outline
+            const centerX = mapX * state.tileSize;
+            const centerY = mapY * state.tileSize;
+            context.strokeRect(
+              centerX - state.tileSize, 
+              centerY - state.tileSize, 
+              state.tileSize * 3, 
+              state.tileSize * 3
+            );
+          }
+        } else {
+          // Hexagonal grid outline - simplified for now
+          const { x: displayX, y: displayY } = mapToCanvasPosition(mapX, mapY, state.tileSize, state.mapType);
+          if (state.selectedTool === 'smallBrush' || state.selectedTool === 'eraser') {
+            // Draw hexagon outline
+            context.beginPath();
+            const hexSize = state.tileSize;
+            for (let i = 0; i < 6; i++) {
+              const angleDeg = 60 * i - 30;
+              const angleRad = Math.PI / 180 * angleDeg;
+              const radius = hexSize / 2;
+              const xPos = displayX + radius * Math.cos(angleRad);
+              const yPos = displayY + radius * Math.sin(angleRad);
+              
+              if (i === 0) {
+                context.moveTo(xPos, yPos);
+              } else {
+                context.lineTo(xPos, yPos);
+              }
+            }
+            context.closePath();
+            context.stroke();
+          }
+        }
+      }
     }
   };
   
@@ -128,7 +198,7 @@ const Canvas: React.FC<CanvasProps> = ({ onNewMapClick }) => {
         <div className="flex items-center space-x-3">
           <div className="flex items-center space-x-1">
             <label htmlFor="mapType" className="text-xs uppercase font-medium">Map Type:</label>
-            <Select value={state.mapType} onValueChange={(val: 'grid' | 'hex') => useEditor().setMapType(val)}>
+            <Select value={state.mapType} onValueChange={(val: 'grid' | 'hex') => setMapType(val)}>
               <SelectTrigger className="bg-neutral-700 border-neutral-600 w-24 h-8">
                 <SelectValue />
               </SelectTrigger>
@@ -141,7 +211,7 @@ const Canvas: React.FC<CanvasProps> = ({ onNewMapClick }) => {
           
           <div className="flex items-center space-x-1">
             <label htmlFor="tileSize" className="text-xs uppercase font-medium">Tile Size:</label>
-            <Select value={state.tileSize.toString()} onValueChange={(val) => useEditor().setTileSize(parseInt(val))}>
+            <Select value={state.tileSize.toString()} onValueChange={(val) => setTileSize(parseInt(val))}>
               <SelectTrigger className="bg-neutral-700 border-neutral-600 w-20 h-8">
                 <SelectValue />
               </SelectTrigger>
@@ -159,8 +229,23 @@ const Canvas: React.FC<CanvasProps> = ({ onNewMapClick }) => {
             <Select 
               value={`${state.mapSize.width}x${state.mapSize.height}`} 
               onValueChange={(val) => {
-                const [width, height] = val.split('x').map(Number);
-                useEditor().setMapSize(width, height);
+                if (val === 'custom') {
+                  // Open custom size dialog
+                  const width = window.prompt("Enter map width (max 300):", state.mapSize.width.toString());
+                  const height = window.prompt("Enter map height (max 300):", state.mapSize.height.toString());
+                  
+                  if (width && height) {
+                    const parsedWidth = Math.min(Math.max(1, parseInt(width)), 300);
+                    const parsedHeight = Math.min(Math.max(1, parseInt(height)), 300);
+                    
+                    if (!isNaN(parsedWidth) && !isNaN(parsedHeight)) {
+                      setMapSize(parsedWidth, parsedHeight);
+                    }
+                  }
+                } else {
+                  const [width, height] = val.split('x').map(Number);
+                  setMapSize(width, height);
+                }
               }}
             >
               <SelectTrigger className="bg-neutral-700 border-neutral-600 w-24 h-8">
@@ -171,6 +256,11 @@ const Canvas: React.FC<CanvasProps> = ({ onNewMapClick }) => {
                 <SelectItem value="32x32">32x32</SelectItem>
                 <SelectItem value="64x64">64x64</SelectItem>
                 <SelectItem value="128x128">128x128</SelectItem>
+                <SelectItem value="200x200">200x200</SelectItem>
+                <SelectItem value="300x300">300x300</SelectItem>
+                <SelectItem value="100x200">100x200</SelectItem>
+                <SelectItem value="200x100">200x100</SelectItem>
+                <SelectItem value="custom">Custom Size...</SelectItem>
               </SelectContent>
             </Select>
           </div>

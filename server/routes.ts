@@ -5,6 +5,7 @@ import { insertMapSchema, insertTilesetSchema } from "@shared/schema";
 import fs from "fs";
 import path from "path";
 import multer from "multer";
+import { setupAuth } from "./auth";
 
 // Configure storage for file uploads
 const upload = multer({
@@ -24,6 +25,8 @@ const upload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Setup authentication
+  setupAuth(app);
   // Serve the default tilesets
   app.get("/api/tilesets/overland1.png", (req: Request, res: Response) => {
     const imagePath = path.join(import.meta.dirname, "..", "attached_assets", "image_1743982934053.png");

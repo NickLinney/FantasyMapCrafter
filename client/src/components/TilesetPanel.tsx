@@ -113,7 +113,7 @@ const TilesetPanel: React.FC = () => {
                 Array.from({ length: selectedTileset.gridWidth }).map((_, x) => (
                   <div 
                     key={`${x}-${y}`}
-                    className={`w-8 h-8 bg-cover bg-center cursor-pointer hover:ring-2 hover:ring-primary ${
+                    className={`bg-cover bg-center cursor-pointer hover:ring-2 hover:ring-primary ${
                       state.selectedTile && 
                       state.selectedTile.tilesetId === selectedTileset.id && 
                       state.selectedTile.x === x && 
@@ -122,6 +122,8 @@ const TilesetPanel: React.FC = () => {
                         : ''
                     }`}
                     style={{
+                      width: `${selectedTileset.tileWidth}px`,
+                      height: `${selectedTileset.tileHeight}px`,
                       backgroundImage: `url(${selectedTileset.imageUrl})`,
                       backgroundPosition: `-${x * selectedTileset.tileWidth}px -${y * selectedTileset.tileHeight}px`,
                       backgroundSize: `${selectedTileset.gridWidth * selectedTileset.tileWidth}px ${selectedTileset.gridHeight * selectedTileset.tileHeight}px`
@@ -137,8 +139,10 @@ const TilesetPanel: React.FC = () => {
                 <h3 className="text-sm font-medium text-neutral-800 mb-1">Selection</h3>
                 <div className="flex items-center justify-between">
                   <div 
-                    className="w-12 h-12 bg-cover bg-center border-2 border-primary"
+                    className="bg-cover bg-center border-2 border-primary"
                     style={{
+                      width: `${Math.min(48, selectedTileset.tileWidth * 2)}px`,
+                      height: `${Math.min(48, selectedTileset.tileHeight * 2)}px`,
                       backgroundImage: `url(${selectedTileset.imageUrl})`,
                       backgroundPosition: `-${state.selectedTile.x * selectedTileset.tileWidth}px -${state.selectedTile.y * selectedTileset.tileHeight}px`,
                       backgroundSize: `${selectedTileset.gridWidth * selectedTileset.tileWidth}px ${selectedTileset.gridHeight * selectedTileset.tileHeight}px`

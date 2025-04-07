@@ -6,7 +6,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { useEditor } from '@/contexts/EditorContext';
 import { useToast } from '@/hooks/use-toast';
-import { exportCanvasToPng } from '@/lib/canvasUtils';
+import { exportCanvasToPng, drawGrid } from '@/lib/canvasUtils';
 import FileSaver from 'file-saver';
 
 interface ExportModalProps {
@@ -29,17 +29,108 @@ const ExportModal: React.FC<ExportModalProps> = ({ open, onClose }) => {
     try {
       setIsExporting(true);
       
-      // In a real implementation, we'd render the map to a new canvas with the selected options
-      // For this example, we'll simulate finding the canvas in the DOM
-      const canvas = document.querySelector('canvas');
+      // Create a temporary canvas without the brush preview
+      const tempCanvas = document.createElement('canvas');
+      const ctx = tempCanvas.getContext('2d');
       
-      if (!canvas) {
+      // Find the original canvas to get its dimensions
+      const originalCanvas = document.querySelector('canvas');
+      
+      if (!originalCanvas || !ctx) {
         throw new Error("Canvas not found");
+      }
+      
+      // Set the temp canvas to the same dimensions
+      tempCanvas.width = originalCanvas.width;
+      tempCanvas.height = originalCanvas.height;
+      
+      // Draw the grid if needed
+      if (includeGridLines) {
+        drawGrid(
+          ctx,
+          state.mapSize.width,
+          state.mapSize.height,
+          state.tileSize,
+          state.mapType
+        );
+      }
+      
+      // Get the loaded tilesets from the main app
+      const tilesetImages = new Map<number, HTMLImageElement>();
+      
+      // Find all tileset images that might be in the DOM
+      const tilesetElements = document.querySelectorAll('img[src*="tilesets"]');
+      Array.from(tilesetElements).forEach((element, index) => {
+        const img = element as HTMLImageElement;
+        // This is a simplification - in a real app, we would need to get the actual tileset IDs
+        // Here we're assuming the first tileset has ID 1, second has ID 2, etc.
+        tilesetImages.set(index + 1, img);
+      });
+      
+      // Draw all layers or just the current one
+      if (exportAllLayers) {
+        const visibleLayers = state.layers.filter(layer => layer.visible);
+        for (const layer of visibleLayers) {
+          // Draw each layer
+          for (let y = 0; y < layer.tiles.length; y++) {
+            for (let x = 0; x < layer.tiles[y].length; x++) {
+              const tile = layer.tiles[y][x];
+              if (tile) {
+                // Parse the tile data
+                const [tilesetId, tileX, tileY] = tile.split(',').map(Number);
+                const tilesetImg = tilesetImages.get(tilesetId);
+                
+                if (tilesetImg) {
+                  // Calculate positions and draw
+                  const sourceX = tileX * state.tileSize;
+                  const sourceY = tileY * state.tileSize;
+                  const destX = x * state.tileSize;
+                  const destY = y * state.tileSize;
+                  
+                  ctx.drawImage(
+                    tilesetImg,
+                    sourceX, sourceY, state.tileSize, state.tileSize,
+                    destX, destY, state.tileSize, state.tileSize
+                  );
+                }
+              }
+            }
+          }
+        }
+      } else {
+        // Just draw the current layer
+        const layer = state.layers[state.currentLayer];
+        if (layer.visible) {
+          for (let y = 0; y < layer.tiles.length; y++) {
+            for (let x = 0; x < layer.tiles[y].length; x++) {
+              const tile = layer.tiles[y][x];
+              if (tile) {
+                // Parse the tile data
+                const [tilesetId, tileX, tileY] = tile.split(',').map(Number);
+                const tilesetImg = tilesetImages.get(tilesetId);
+                
+                if (tilesetImg) {
+                  // Calculate positions and draw
+                  const sourceX = tileX * state.tileSize;
+                  const sourceY = tileY * state.tileSize;
+                  const destX = x * state.tileSize;
+                  const destY = y * state.tileSize;
+                  
+                  ctx.drawImage(
+                    tilesetImg,
+                    sourceX, sourceY, state.tileSize, state.tileSize,
+                    destX, destY, state.tileSize, state.tileSize
+                  );
+                }
+              }
+            }
+          }
+        }
       }
       
       // Export as PNG
       if (exportFormat === 'png' || exportFormat === 'both') {
-        const dataUrl = canvas.toDataURL('image/png');
+        const dataUrl = tempCanvas.toDataURL('image/png');
         const blob = await (await fetch(dataUrl)).blob();
         FileSaver.saveAs(blob, `map-${state.mapSize.width}x${state.mapSize.height}.png`);
       }

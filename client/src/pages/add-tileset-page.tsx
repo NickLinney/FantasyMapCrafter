@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, Upload } from 'lucide-react';
+import Navbar from '@/components/Navbar';
 
 const AddTilesetPage = () => {
   const [name, setName] = useState('');
@@ -121,26 +122,28 @@ const AddTilesetPage = () => {
   };
   
   return (
-    <div className="container mx-auto px-4 py-8 max-w-3xl">
-      <Button 
-        variant="ghost" 
-        className="mb-6 text-sm"
-        onClick={() => setLocation('/')}
-      >
-        <ArrowLeft className="h-4 w-4 mr-2" />
-        Back to Map Editor
-      </Button>
-      
-      <Card>
-        <CardHeader>
-          <CardTitle>Add New Tileset</CardTitle>
-          <CardDescription>
-            Upload a tileset image and configure its properties. The image will be divided into a grid of tiles based on the specified tile width and height.
-          </CardDescription>
-        </CardHeader>
+    <div className="flex flex-col min-h-screen">
+      <Navbar />
+      <div className="container mx-auto px-4 py-8 max-w-3xl">
+        <Button 
+          variant="ghost" 
+          className="mb-6 text-sm"
+          onClick={() => setLocation('/')}
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Map Editor
+        </Button>
         
-        <form onSubmit={handleSubmit}>
-          <CardContent className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Add New Tileset</CardTitle>
+            <CardDescription>
+              Upload a tileset image and configure its properties. The image will be divided into a grid of tiles based on the specified tile width and height.
+            </CardDescription>
+          </CardHeader>
+          
+          <form onSubmit={handleSubmit}>
+            <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Tileset Name</Label>
               <Input
@@ -238,23 +241,24 @@ const AddTilesetPage = () => {
             </div>
           </CardContent>
           
-          <CardFooter className="flex justify-between">
-            <Button 
-              type="button" 
-              variant="outline"
-              onClick={() => setLocation('/')}
-            >
-              Cancel
-            </Button>
-            <Button 
-              type="submit" 
-              disabled={!selectedFile || isUploading}
-            >
-              {isUploading ? 'Uploading...' : 'Upload Tileset'}
-            </Button>
-          </CardFooter>
-        </form>
+            <CardFooter className="flex justify-between">
+              <Button 
+                type="button" 
+                variant="outline"
+                onClick={() => setLocation('/')}
+              >
+                Cancel
+              </Button>
+              <Button 
+                type="submit" 
+                disabled={!selectedFile || isUploading}
+              >
+                {isUploading ? 'Uploading...' : 'Upload Tileset'}
+              </Button>
+            </CardFooter>
+          </form>
       </Card>
+      </div>
     </div>
   );
 };
